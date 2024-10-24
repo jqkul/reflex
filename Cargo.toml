@@ -1,10 +1,10 @@
 [package]
 name = "reflex"
-version = "0.1.2"
+version = "0.2.0"
 description = "A minimal flex-like lexer"
 license = "MIT"
-repository = "https://github.com/nazek42/reflex"
-authors = ["bkul"]
+repository = "https://github.com/jqkul/reflex"
+authors = ["jqkul"]
 
 [dependencies]
 regex = "1.1.0"
