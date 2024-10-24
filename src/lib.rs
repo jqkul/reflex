@@ -1,72 +1,125 @@
-extern crate regex;
+use regex::{Regex, Match};
+use thiserror::Error;
 
-use regex::Regex;
-use std::boxed::Box;
+pub struct Lexer<'l, T> {
+    rules: Vec<Rule<'l, T>>
+}
 
-pub struct Ruleset<T>(Vec<(Regex, Box<Fn(&str) -> Option<T>>)>);
+pub type AddRuleResult<'l, T> = Result<Lexer<'l, T>, regex::Error>;
 
-impl <T: Clone + 'static> Ruleset<T> {
-    pub fn new() -> Ruleset<T> {
-        Ruleset::<T>(Vec::new())
+impl<'l, T> Lexer<'l, T> {
+    pub fn new() -> Lexer<'l, T> {
+        Lexer { rules: Vec::new() }
     }
 
-    pub fn add_rule<F: 'static + Fn(&str)->T>(&mut self, re: &str, rule: F) {
-        let func = Box::new(move |_tok: &str| Some(rule(_tok)));
-        self.0.push((Regex::new(convert_regex(re).as_ref()).unwrap(), func));
+    pub fn rule(mut self, pattern: impl AsRef<str>, rule: impl Fn(Match) -> T + 'l) -> AddRuleResult<'l, T> {
+        self.rules.push(Rule {
+            pattern: Regex::new(&add_start_flag(pattern))?,
+            func: Box::new(move |mat| Some(rule(mat)))
+        });
+        Ok(self)
     }
 
-    pub fn add_simple(&mut self, re: &str, token: T) {
-        let func = Box::new(move |_tok: &str| Some(token.clone()));
-        self.0.push((Regex::new(convert_regex(re).as_ref()).unwrap(), func));
+    pub fn rule_option(mut self, pattern: impl AsRef<str>, rule: impl Fn(Match) -> Option<T> + 'l) -> AddRuleResult<'l, T> {
+        self.rules.push(Rule {
+            pattern: Regex::new(&add_start_flag(pattern))?,
+            func: Box::new(rule)
+        });
+        Ok(self)
     }
 
-    pub fn add_noop(&mut self, re: &str) {
-        let func = Box::new(|_tok: &str| None);
-        self.0.push((Regex::new(convert_regex(re).as_ref()).unwrap(), func));
+    pub fn rule_noop(mut self, pattern: impl AsRef<str>) -> AddRuleResult<'l, T> {
+        self.rules.push(Rule {
+            pattern: Regex::new(&add_start_flag(pattern))?,
+            func: Box::new(|_| None)
+        });
+        Ok(self)
+    }
+
+    pub fn tokenize<'i>(&'i self, string: &'i impl AsRef<str>) -> LexerIter<'i, T> {
+        LexerIter {
+            rules: &self.rules,
+            full_string: string.as_ref(),
+            pos: 0,
+            failed: false
+        }
     }
 }
 
-pub struct Lexer<'a, T: Clone + 'static> {
-    rules: &'a Ruleset<T>,
-    text: String,
+impl<'l, T: 'l + Clone> Lexer<'l, T> {
+    pub fn rule_simple(mut self, pattern: impl AsRef<str>, token: T) -> AddRuleResult<'l, T> {
+        self.rules.push(Rule {
+            pattern: Regex::new(&add_start_flag(pattern))?,
+            func: Box::new(move |_| Some(token.clone()))
+        });
+        Ok(self)
+    }
 }
 
-impl <'a, T: Clone + 'static> Iterator for Lexer<'a, T> {
-    type Item = Result<T, String>;
-    fn next(&mut self) -> Option<Result<T, String>> {
-        let mut result: Option<Result<T, String>> = None;
-        let mut matched;
-        while result.is_none() {
-            matched = false;
-            for &(ref re, ref func) in self.rules.0.iter() {
-                if self.text.is_empty() {
-                    return None;
-                }
-                if let Some(mat) = re.find(self.text.clone().as_ref()) {
-                    if let Some(token) = func(&self.text[mat.start()..mat.end()]) {
-                        result = Some(Ok(token));
+struct Rule<'r, T> {
+    pattern: Regex,
+    func: Box<dyn Fn(Match) -> Option<T> + 'r>
+}
+
+pub struct LexerIter<'i, T> {
+    rules: &'i [Rule<'i, T>],
+    full_string: &'i str,
+    pos: usize,
+    failed: bool
+}
+
+impl<'i, T> Iterator for LexerIter<'i, T> {
+    type Item = TokenizeResult<T>;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.failed || self.pos >= self.full_string.len() {
+            return None;
+        }
+
+        loop {
+            let string = &self.full_string[self.pos..];
+            let mut matched_noop = false;
+
+            for rule in self.rules {
+                if let Some(mat) = rule.pattern.find(string) {
+                    #[cfg(debug_assertions)]
+                    assert_eq!(mat.start(), 0);
+
+                    self.pos += mat.end();
+
+                    if let Some(token) = (rule.func)(mat) {
+                        return Some(Ok(token));
+                    } else {
+                        matched_noop = true;
                     }
-                    self.text = String::from(&self.text[mat.end()..]);
-                    matched = true;
                     break;
                 }
             }
-            if !matched {
-                result = Some(Err(format!("No rule matched \"{}\"", self.text)));
-                self.text.clear();
+
+            if !matched_noop {
+                self.failed = true;
+                return Some(Err(TokenizeError::UnexpectedChar {
+                    ch: string.chars().next().unwrap(),
+                    position: self.pos
+                }));
             }
         }
-        result
     }
 }
 
-pub fn lex<T: Clone + 'static, S: Into<String>>(rules: &Ruleset<T>, text: S) -> Lexer<T> {
-    Lexer {
-        rules: rules,
-        text: text.into(),
+#[derive(Error, Debug)]
+pub enum TokenizeError {
+    #[error("no rules matched character '{ch:?}' at position {position:?}")]
+    UnexpectedChar {
+        ch: char,
+        position: usize
     }
 }
 
-fn convert_regex(re: &str) -> String {
-    format!("^{}", re)
+pub type TokenizeResult<T> = Result<T, TokenizeError>;
+
+
+
+
+fn add_start_flag(pattern: impl AsRef<str>) -> String {
+    format!("^{}", pattern.as_ref())
 }

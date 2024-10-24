@@ -1,6 +1,6 @@
 extern crate reflex;
 
-use reflex::{Ruleset, lex};
+use reflex::Lexer;
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 enum Token {
@@ -15,7 +15,7 @@ enum Token {
 }
 
 #[test]
-fn calculator() {
+fn calculator() -> Result<(), regex::Error> {
     let program = "(3.45 + 3) * (-7 - .8) ^ (1.3 / -.5)".to_string();
     let expected = vec![
         Token::ParenL, Token::Number(3.45), Token::OpAdd, Token::Number(3.0), Token::ParenR,
@@ -23,19 +23,22 @@ fn calculator() {
         Token::OpPow, Token::ParenL, Token::Number(1.3), Token::OpDiv, Token::Number(-0.5), Token::ParenR
     ];
 
-    let mut ruleset: Ruleset<Token> = Ruleset::new();
-    ruleset.add_rule(r"-?[0-9]*\.?[0-9]+", |token| Token::Number(token.parse().unwrap_or(0.0)));
-    ruleset.add_simple(r"\+", Token::OpAdd);
-    ruleset.add_simple(r"-", Token::OpSub);
-    ruleset.add_simple(r"\*", Token::OpMul);
-    ruleset.add_simple(r"/", Token::OpDiv);
-    ruleset.add_simple(r"\^", Token::OpPow);
-    ruleset.add_simple(r"\(", Token::ParenL);
-    ruleset.add_simple(r"\)", Token::ParenR);
-    ruleset.add_noop(r"(?s)\s");
+    let lexer = Lexer::new()
+        .rule(r"-?[0-9]*\.?[0-9]+", |mat| Token::Number(mat.as_str().parse().unwrap()))?
+        .rule_simple(r"\+", Token::OpAdd)?
+        .rule_simple(r"-", Token::OpSub)?
+        .rule_simple(r"\*", Token::OpMul)?
+        .rule_simple(r"/", Token::OpDiv)?
+        .rule_simple(r"\^", Token::OpPow)?
+        .rule_simple(r"\(", Token::ParenL)?
+        .rule_simple(r"\)", Token::ParenR)?
+        .rule_noop(r"(?s)\s+")?;
+    
     let mut i = 0;
-    for token in lex(&ruleset, program) {
+    for token in lexer.tokenize(&program) {
         assert_eq!(token.unwrap(), expected[i]);
         i += 1;
     }
+
+    Ok(())
 }
