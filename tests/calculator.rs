@@ -23,16 +23,16 @@ fn calculator() -> Result<(), regex::Error> {
         Token::OpPow, Token::ParenL, Token::Number(1.3), Token::OpDiv, Token::Number(-0.5), Token::ParenR
     ];
 
-    let lexer = Lexer::new()
-        .rule(r"-?[0-9]*\.?[0-9]+", |mat| Token::Number(mat.as_str().parse().unwrap()))?
-        .rule_simple(r"\+", Token::OpAdd)?
-        .rule_simple(r"-", Token::OpSub)?
-        .rule_simple(r"\*", Token::OpMul)?
-        .rule_simple(r"/", Token::OpDiv)?
-        .rule_simple(r"\^", Token::OpPow)?
-        .rule_simple(r"\(", Token::ParenL)?
-        .rule_simple(r"\)", Token::ParenR)?
-        .rule_noop(r"(?s)\s+")?;
+    let mut lexer = Lexer::new();
+    lexer.rule(r"-?[0-9]*\.?[0-9]+", |mat| Token::Number(mat.as_str().parse().unwrap()))?
+         .rule_simple(r"\+", Token::OpAdd)?
+         .rule_simple(r"-", Token::OpSub)?
+         .rule_simple(r"\*", Token::OpMul)?
+         .rule_simple(r"/", Token::OpDiv)?
+         .rule_simple(r"\^", Token::OpPow)?
+         .rule_simple(r"\(", Token::ParenL)?
+         .rule_simple(r"\)", Token::ParenR)?
+         .rule_noop(r"(?s)\s+")?;
     
     let mut i = 0;
     for token in lexer.tokenize(&program) {

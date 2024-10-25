@@ -5,14 +5,14 @@ pub struct Lexer<'l, T> {
     rules: Vec<Rule<'l, T>>
 }
 
-pub type AddRuleResult<'l, T> = Result<Lexer<'l, T>, regex::Error>;
+pub type AddRuleResult<'l, 'a, T> = Result<&'a mut Lexer<'l, T>, regex::Error>;
 
 impl<'l, T> Lexer<'l, T> {
     pub fn new() -> Lexer<'l, T> {
         Lexer { rules: Vec::new() }
     }
 
-    pub fn rule(mut self, pattern: impl AsRef<str>, rule: impl Fn(Match) -> T + 'l) -> AddRuleResult<'l, T> {
+    pub fn rule(&mut self, pattern: impl AsRef<str>, rule: impl Fn(Match) -> T + 'l) -> AddRuleResult<'l, '_, T> {
         self.rules.push(Rule {
             pattern: Regex::new(&add_start_flag(pattern))?,
             func: Box::new(move |mat| Some(rule(mat)))
@@ -20,7 +20,7 @@ impl<'l, T> Lexer<'l, T> {
         Ok(self)
     }
 
-    pub fn rule_option(mut self, pattern: impl AsRef<str>, rule: impl Fn(Match) -> Option<T> + 'l) -> AddRuleResult<'l, T> {
+    pub fn rule_option(&mut self, pattern: impl AsRef<str>, rule: impl Fn(Match) -> Option<T> + 'l) -> AddRuleResult<'l, '_, T> {
         self.rules.push(Rule {
             pattern: Regex::new(&add_start_flag(pattern))?,
             func: Box::new(rule)
@@ -28,7 +28,7 @@ impl<'l, T> Lexer<'l, T> {
         Ok(self)
     }
 
-    pub fn rule_noop(mut self, pattern: impl AsRef<str>) -> AddRuleResult<'l, T> {
+    pub fn rule_noop(&mut self, pattern: impl AsRef<str>) -> AddRuleResult<'l, '_, T> {
         self.rules.push(Rule {
             pattern: Regex::new(&add_start_flag(pattern))?,
             func: Box::new(|_| None)
@@ -47,7 +47,7 @@ impl<'l, T> Lexer<'l, T> {
 }
 
 impl<'l, T: 'l + Clone> Lexer<'l, T> {
-    pub fn rule_simple(mut self, pattern: impl AsRef<str>, token: T) -> AddRuleResult<'l, T> {
+    pub fn rule_simple(&mut self, pattern: impl AsRef<str>, token: T) -> AddRuleResult<'l, '_, T> {
         self.rules.push(Rule {
             pattern: Regex::new(&add_start_flag(pattern))?,
             func: Box::new(move |_| Some(token.clone()))
@@ -71,11 +71,11 @@ pub struct LexerIter<'i, T> {
 impl<'i, T> Iterator for LexerIter<'i, T> {
     type Item = TokenizeResult<T>;
     fn next(&mut self) -> Option<Self::Item> {
-        if self.failed || self.pos >= self.full_string.len() {
-            return None;
-        }
-
         loop {
+            if self.failed || self.pos >= self.full_string.len() {
+                return None;
+            }
+
             let string = &self.full_string[self.pos..];
             let mut matched_noop = false;
 
